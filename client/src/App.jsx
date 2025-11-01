@@ -7,6 +7,9 @@ import { Toaster } from 'sonner'; // For notifications
 import PaymentReceipt from './components/PaymentReceipt';
 import ExperiencePage from './pages/ExperienceDetails';
 import ServicePage from './pages/ServiceDetails';
+import Dashboard from './components/Account/BecomeAHost';
+import FavoritesPage from './pages/FavouritesPage';
+
 
 // Lazy load pages for better performance
 const IndexPage = lazy(() => import('./pages/IndexPage'));
@@ -23,13 +26,22 @@ const Services = lazy(() => import('./pages/ServicesPage'));
 
 
 import axios from 'axios';
+import ScrollToTop from './components/Layout/ScrollToTop';
+import ScrollToTopButton from './components/Layout/ScrollToTopButton'
+import BookingDetails from './pages/BookingDetailsPage';
+import VerifyBookingPage from './components/Booking/BookingVerify';
 axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL;
 axios.defaults.withCredentials = true;
 
 function App() {
+
+  
+
   return (
     <UserContextProvider>
       <Router>
+        <ScrollToTop/>
+        <ScrollToTopButton/>
         <Suspense fallback={<div className="text-center py-20 text-gray-500">Loading...</div>}>
           <Routes>
             <Route path="/" element={<Layout />}>
@@ -42,12 +54,15 @@ function App() {
               <Route path="/account/places/:id" element={<PlacesFormPage />} />
               <Route path="/place/:id" element={<PlacePage />} />
               <Route path="/account/bookings" element={<BookingsPage />} />
-              <Route path="/account/bookings/:id" element={<BookingPage />} />
+              <Route path="/account/bookings/:id" element={<BookingDetails/>} />
                <Route path="/payment" element={<PaymentReceipt />} />
                <Route path="/experiences" element={<ExperiencesPage />} />
                <Route path="/services" element={<Services />} />
-               <Route path="/experience/:id" element={<ExperiencePage />} />
+               <Route path="/experiences/:id" element={<ExperiencePage />} />
                <Route path="/service/:id" element={<ServicePage />} />
+               <Route path="/become-host" element={<Dashboard/>}/>
+               <Route path="/wishlist" element={<FavoritesPage/>}/>
+               <Route path="/verify" element={<VerifyBookingPage />} />
             </Route>
           </Routes>
           <Toaster />

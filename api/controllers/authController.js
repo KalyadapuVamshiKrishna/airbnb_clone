@@ -1,58 +1,158 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import * as z from "zod";
+
 import User from "../models/User.js";
+import Place from "../models/Place.js";
+import Booking from "../models/Booking.js";
 import { jwtSecret } from "../middlewares/auth.js";
 
-const bcryptSalt = bcrypt.genSaltSync(10);
-
+// ====================== REGISTER ======================
 export const register = async (req, res) => {
   try {
-     const { name, email, password, role } = req.body; 
+    //Zod schema
+    const userSchema = z.object({
+      name: z.string().min(2, { message: "Name is too short" }),
+      email: z.string().email({ message: "Invalid email format" }),
+      password: z.string().min(6, { message: "Password must be at least 6 characters" }),
+      role: z.string().optional(),
+    });
+
+    // Parse and validate request body
+    let parsed;
+    try {
+      parsed = userSchema.parse(req.body);
+    } catch (validationError) {
+      // If Zod validation fails, return 400 with detailed errors
+      return res.status(400).json({ error: validationError.errors });
+    }
+
+    const { name, email, password, role } = parsed;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({ error: "Email already registered" });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
     const user = await User.create({
       name,
       email,
-      password: bcrypt.hashSync(password, bcryptSalt),
-      role
+      password: hashedPassword,
+      role: role || "customer",
     });
-    res.json(user);
-  } catch (e) {
-    res.status(422).json(e);
+
+    // Respond with created user (excluding password)
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (err) {
+    console.error("Register Error:", err);
+
+    // If error is from Mongoose or other unknown errors
+    res.status(500).json({ error: "Registration failed" });
   }
 };
 
+// ====================== LOGIN ======================
 export const login = async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email });
-  if (!user) return res.status(404).json({ error: "User not found" });
+  try {
+    const { email, password } = req.body;
 
-  const passOk = bcrypt.compareSync(password, user.password);
-  if (!passOk) return res.status(401).json({ error: "Wrong password" });
+    if (!email || !password)
+      return res.status(400).json({ error: "Email and password are required" });
 
- jwt.sign(
-    { email: user.email, id: user._id, role: user.role },
-    jwtSecret,
-    { expiresIn: "7d" }, // optional
-    (err, token) => {
-      if (err) throw err;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-      res.cookie("token", token, {
-        httpOnly: true,
-        sameSite: "lax", // or "none" + secure:true for production
-      }).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      });
-    }
-  );
+    const passOk = await bcrypt.compare(password, user.password);
+    if (!passOk) return res.status(401).json({ error: "Invalid credentials" });
+
+    const token = jwt.sign(
+      { email: user.email, id: user._id, role: user.role },
+      jwtSecret,
+      { expiresIn: "7d" }
+    );
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      sameSite: "None",
+      secure: true, 
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: "/",
+    });
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (err) {
+    console.error("Login Error:", err);
+    res.status(500).json({ error: "Login failed" });
+  }
 };
 
+// ====================== PROFILE ======================
 export const profile = async (req, res) => {
-  const user = await User.findById(req.user.id);
-  res.json({ name: user.name, email: user.email, _id: user._id });
+  try {
+    const user = await User.findById(req.user.id).select("-password");
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json(user);
+  } catch (err) {
+    console.error("Profile Error:", err);
+    res.status(500).json({ error: "Failed to fetch profile" });
+  }
 };
 
+// ====================== USER STATS ======================
+export const stats = async (req, res) => {
+  try {
+    const listingsCount = await Place.countDocuments({ owner: req.user.id });
+    const tripsCount = await Booking.countDocuments({ user: req.user.id });
+
+    res.json({ listingsCount, tripsCount });
+  } catch (err) {
+    console.error("Stats Error:", err);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+};
+
+// ====================== LOGOUT ======================
 export const logout = (req, res) => {
-  res.cookie("token", "").json(true);
+  res.clearCookie("token", { httpOnly: true, path: "/" });
+  res.json({ success: true, message: "Logged out successfully" });
+};
+
+// ====================== BECOME HOST ======================
+export const becomeHost = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (user.role === "host") {
+      return res.status(400).json({ error: "You are already a host" });
+    }
+
+    user.role = "host";
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "You are now a host!",
+      role: user.role,
+    });
+  } catch (err) {
+    console.error("Become Host Error:", err);
+    res.status(500).json({ error: "Failed to become a host" });
+  }
 };

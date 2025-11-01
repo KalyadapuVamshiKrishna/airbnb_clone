@@ -1,174 +1,201 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import axios from "axios";
 import AccountNav from "../components/Account/AccountNav";
 import PlaceImg from "../components/Places/PlaceImg";
 import BookingDates from "../components/Booking/BookingDates";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MapPin, Star, Trash2 } from "lucide-react";
-import { Dialog } from "@headlessui/react";
+import { MapPin, Trash2, X } from "lucide-react";
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMessage, setModalMessage] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [confirmModal, setConfirmModal] = useState(false);
+  const [selectedBookingId, setSelectedBookingId] = useState(null);
 
   useEffect(() => {
-    fetchBookings();
+    axios
+      .get("/bookings", { withCredentials: true })
+      .then((response) => {
+        setBookings(response.data.bookings); // ✅ updated to match your backend
+      })
+      .catch((err) => console.error(err));
   }, []);
 
-  const fetchBookings = async () => {
+  const handleDelete = async (id) => {
     try {
-      setLoading(true);
-      const { data } = await axios.get("/bookings");
-      setBookings(data);
+      await axios.delete(`/bookings/${id}`, { withCredentials: true });
+      setBookings((prev) => prev.filter((b) => b._id !== id));
+
+      setModalMessage(
+        "Your booking has been canceled. The refund will be processed in 4 to 7 working days."
+      );
+      setShowModal(true);
     } catch (error) {
-      console.error("Error fetching bookings:", error);
-    } finally {
-      setLoading(false);
+      console.error("Error deleting booking:", error);
     }
   };
 
-  const handleDeleteBooking = async (id) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to cancel this booking?"
-    );
-    if (!confirmDelete) return;
+  const openConfirmModal = (id) => {
+    setSelectedBookingId(id);
+    setConfirmModal(true);
+  };
 
-    try {
-      setDeleting(id);
-      await axios.delete(`/bookings/${id}`);
-      setBookings((prev) => prev.filter((b) => b._id !== id));
-      setIsModalOpen(true); // Show success modal
-    } catch (error) {
-      console.error("Error deleting booking:", error);
-    } finally {
-      setDeleting(null);
+  const confirmDelete = () => {
+    if (selectedBookingId) {
+      handleDelete(selectedBookingId);
     }
+    setConfirmModal(false);
+    setSelectedBookingId(null);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 md:px-8 lg:px-16 py-6">
+    <div className="max-w-7xl mx-auto px-4 md:px-8 lg:px-16 py-8">
       <AccountNav />
 
-      <h1 className="text-3xl font-bold mt-6 mb-4">Your Bookings</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-8">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
+          Your Bookings
+        </h1>
+      </div>
 
-      {loading && <p className="text-center text-gray-500">Loading...</p>}
+      {bookings.length > 0 ? (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {bookings.map((booking) => {
+            const location =
+              booking.address ||
+              (booking.place ? booking.place.address : "Location not available");
 
-      {!loading && bookings?.length === 0 && (
-        <div className="text-center text-gray-500 py-12">
-          No bookings found.
-        </div>
-      )}
-
-      <div className="flex flex-col gap-8">
-        {bookings?.map((booking) => {
-          const loc = [
-            booking.place.location?.city,
-            booking.place.location?.country,
-          ]
-            .filter(Boolean)
-            .join(", ");
-
-          return (
-            <Card
-              key={booking._id}
-              className="flex flex-col lg:flex-row gap-6 shadow-md hover:shadow-xl transition-shadow duration-300 rounded-3xl overflow-hidden"
-            >
-              {/* Left: Place Image */}
-              <div className="lg:w-80 w-full h-64 lg:h-auto flex-shrink-0 relative">
-                <PlaceImg
-                  place={booking.place}
-                  className="w-full h-full object-cover rounded-l-3xl"
-                />
-              </div>
-
-              {/* Right: Details */}
-              <CardContent className="flex flex-col justify-between flex-1 p-6">
-                <div>
-                  <h2 className="text-2xl font-semibold mb-1">
-                    {booking.place.title}
-                  </h2>
-                  <p className="text-gray-500 flex items-center gap-1 mb-2">
-                    <MapPin className="w-4 h-4" /> {loc || "—"}
-                  </p>
-                  <div className="flex items-center gap-3 mb-2">
-                    <Star className="w-4 h-4 fill-black text-black" />
-                    <span className="text-gray-700">
-                      {booking.place.ratingAvg?.toFixed(1) ?? "New"}
-                    </span>
+            return (
+              <Card
+                key={booking._id}
+                className="flex flex-col rounded-xl overflow-hidden shadow hover:shadow-lg transition"
+              >
+                {/* Image */}
+                {booking.place ? (
+                  <PlaceImg
+                    place={booking.place}
+                    className="h-48 w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-48 w-full bg-gray-200 flex items-center justify-center text-gray-500">
+                    No Image Available
                   </div>
+                )}
+
+                {/* Card Content */}
+                <CardContent className="p-4 flex flex-col justify-between flex-1">
+                  {booking.place && (
+                    <>
+                      <h2 className="text-lg font-semibold mb-2 truncate">
+                        {booking.place.title}
+                      </h2>
+                      <p className="text-gray-600 flex items-center gap-1 mb-3">
+                        <MapPin className="w-4 h-4 text-gray-500" />
+                        {location}
+                      </p>
+                    </>
+                  )}
+
+                  <p className="text-sm text-gray-700 mb-2">
+                    <span className="font-medium text-gray-800">Booked by:</span>{" "}
+                    {booking.name}
+                  </p>
 
                   <BookingDates
                     booking={booking}
-                    className="text-gray-500 text-sm"
+                    className="text-sm text-gray-500 mb-3"
                   />
 
-                  <p className="mt-3 text-gray-700 text-sm">
-                    Price paid:{" "}
-                    <span className="font-semibold">₹{booking.price}</span>
+                  {/* Payment & Transaction Info */}
+                  <p className="text-sm text-gray-500 mb-2">
+                    <span className="font-medium">Payment:</span> {booking.paymentMethod}
                   </p>
-                </div>
+                  {booking.transactionId && (
+                    <p className="text-sm text-gray-500 mb-2">
+                      <span className="font-medium">Transaction ID:</span> {booking.transactionId}
+                    </p>
+                  )}
 
-                <div className="mt-4 flex gap-3 flex-wrap">
-                  <Button
-                    as={Link}
-                    to={`/account/bookings/${booking._id}`}
-                    className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
-                  >
-                    View Details
-                  </Button>
-                  <Button
-                    as={Link}
-                    to={`/account/bookings/${booking._id}/pay`}
-                    variant="outline"
-                    className="flex-1"
-                  >
-                    Pay Now
-                  </Button>
-
-                  <Button
-                    variant="destructive"
-                    onClick={() => handleDeleteBooking(booking._id)}
-                    disabled={deleting === booking._id}
-                    className="flex items-center gap-2 flex-1"
-                  >
-                    {deleting === booking._id ? "Deleting..." : <Trash2 />}
-                    {deleting === booking._id ? "" : "Cancel Booking"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Modal for cancellation success */}
-      <Dialog
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-      >
-        <div className="bg-white p-6 rounded-lg max-w-sm w-full text-center shadow-xl">
-          <h2 className="text-xl font-semibold mb-4">
-            Booking Cancelled Successfully
-          </h2>
-          <p className="text-gray-600 mb-6">
-            Your cancellation is confirmed. Refund will be processed within{" "}
-            <span className="font-semibold">4 to 7 working days</span>.
-          </p>
-          <Button
-            onClick={() => setIsModalOpen(false)}
-            className="bg-blue-600 hover:bg-blue-700 text-white w-full"
-          >
-            OK
+                  <div className="flex items-center justify-between mt-3">
+                    <p className="text-lg font-semibold text-rose-500">₹{booking.price}</p>
+                    {booking.status === "confirmed" && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => openConfirmModal(booking._id)}
+                        className="flex items-center gap-1"
+                      >
+                        <Trash2 className="w-4 h-4" /> Cancel
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center mt-12">
+          <p className="text-gray-500 text-lg mb-4">No bookings yet.</p>
+          <Button asChild>
+            <a href="/" className="bg-rose-500 text-white hover:bg-rose-600">
+              Browse Listings
+            </a>
           </Button>
         </div>
-      </Dialog>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-lg relative animate-fadeIn">
+            <button
+              onClick={() => setConfirmModal(false)}
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-lg font-semibold mb-4 text-red-600">
+              Cancel Booking?
+            </h3>
+            <p className="text-gray-600">
+              Are you sure you want to cancel this booking? This action cannot
+              be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-4">
+              <Button variant="outline" onClick={() => setConfirmModal(false)}>
+                No, Keep it
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete}>
+                Yes, Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-lg relative animate-fadeIn">
+            <button
+              onClick={() => setShowModal(false)}
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-lg font-semibold mb-4 text-green-600">
+              Booking Canceled
+            </h3>
+            <p className="text-gray-600">{modalMessage}</p>
+            <div className="mt-6 flex justify-end">
+              <Button onClick={() => setShowModal(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

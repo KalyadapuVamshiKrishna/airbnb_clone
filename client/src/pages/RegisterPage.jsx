@@ -3,8 +3,7 @@ import { useState } from "react";
 import axios from "axios";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -27,6 +26,7 @@ export default function RegisterPage() {
       navigate('/login'); // navigate to login page
     } catch (e) {
       alert('Registration failed. Please try again.');
+      console.error({ message: e });
     } finally {
       setLoading(false);
     }
@@ -37,33 +37,48 @@ export default function RegisterPage() {
       <div className="w-full max-w-md p-8 bg-white rounded-2xl shadow-md">
         <h1 className="text-3xl font-bold text-center mb-6">Register</h1>
         <form className="space-y-4" onSubmit={registerUser}>
+          
+          {/* Name Input */}
           <div>
-            <Label>Full Name</Label>
+            <Label htmlFor="signup-name">Name</Label>
             <Input
               type="text"
-              placeholder="John Doe"
+              id="signup-name"
+              name="name"
+              placeholder="Your full name"
               value={name}
-              onChange={ev => setName(ev.target.value)}
+              onChange={(ev) => setName(ev.target.value)}
+              autoComplete="name"
               required
             />
           </div>
+
+          {/* Email Input */}
           <div>
-            <Label>Email</Label>
+            <Label htmlFor="signup-email">Email</Label>
             <Input
               type="email"
+              id="signup-email"
+              name="email"
               placeholder="your@email.com"
               value={email}
-              onChange={ev => setEmail(ev.target.value)}
+              onChange={(ev) => setEmail(ev.target.value)}
+              autoComplete="email"
               required
             />
           </div>
+
+          {/* Password Input */}
           <div>
-            <Label>Password</Label>
+            <Label htmlFor="signup-password">Password</Label>
             <Input
               type="password"
+              id="signup-password"
+              name="password"
               placeholder="password"
               value={password}
-              onChange={ev => setPassword(ev.target.value)}
+              onChange={(ev) => setPassword(ev.target.value)}
+              autoComplete="new-password"
               required
             />
           </div>
@@ -72,22 +87,27 @@ export default function RegisterPage() {
           <div>
             <Label>Select Role</Label>
             <div className="flex gap-4 mt-2">
-              <label className="flex items-center gap-2">
+              <label htmlFor="role-customer" className="flex items-center gap-2">
                 <input
                   type="radio"
+                  id="role-customer"
+                  name="role"
                   value="customer"
-                  checked={role === 'customer'}
-                  onChange={() => setRole('customer')}
+                  checked={role === "customer"}
+                  onChange={() => setRole("customer")}
                   className="accent-blue-500"
                 />
                 Customer
               </label>
-              <label className="flex items-center gap-2">
+
+              <label htmlFor="role-host" className="flex items-center gap-2">
                 <input
                   type="radio"
+                  id="role-host"
+                  name="role"
                   value="host"
-                  checked={role === 'host'}
-                  onChange={() => setRole('host')}
+                  checked={role === "host"}
+                  onChange={() => setRole("host")}
                   className="accent-blue-500"
                 />
                 Host

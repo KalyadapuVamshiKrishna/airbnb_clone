@@ -1,18 +1,30 @@
 import { useContext, useEffect, useState } from "react";
-import { differenceInCalendarDays } from "date-fns";
-import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { differenceInCalendarDays, format } from "date-fns";
 import { UserContext } from "../../Context/UserContext.jsx";
+import { useNavigate } from "react-router-dom";
+
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function BookingWidget({ item, type }) {
-  const [checkIn, setCheckIn] = useState("");
-  const [checkOut, setCheckOut] = useState("");
-  const [selectedDate, setSelectedDate] = useState(""); // For experience/service
+  const [checkIn, setCheckIn] = useState(null);
+  const [checkInPopoverOpen, setCheckInPopoverOpen] = useState(false);
+  const [checkOut, setCheckOut] = useState(null);
+  const [checkOutPopoverOpen, setCheckOutPopoverOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
   const [numberOfGuests, setNumberOfGuests] = useState(1);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
 
   const { user } = useContext(UserContext);
   const navigate = useNavigate();
@@ -23,7 +35,7 @@ export default function BookingWidget({ item, type }) {
 
   const numberOfNights =
     type === "place" && checkIn && checkOut
-      ? differenceInCalendarDays(new Date(checkOut), new Date(checkIn))
+      ? differenceInCalendarDays(checkOut, checkIn)
       : 0;
 
   const totalPrice =
@@ -31,50 +43,49 @@ export default function BookingWidget({ item, type }) {
       ? numberOfNights * item.price
       : item.price * numberOfGuests;
 
-  async function handleBooking() {
-    // Basic validations
-    if (type === "place" && (!checkIn || !checkOut)) {
-      return alert("Please select check-in and check-out dates.");
-    }
-    if (type !== "place" && !selectedDate) {
-      return alert("Please select a date.");
-    }
-    if (!phone.trim() || !name.trim()) {
-      return alert("Please fill in all details.");
-    }
+  const serviceFee = Math.max(50, Math.round(totalPrice * 0.05));
+  const grandTotal = totalPrice + serviceFee;
 
-    try {
-      const bookingData = {
-        type, // "place" | "experience" | "service"
-        itemId: item._id, // dynamic id
-        name,
-        phone,
-        numberOfGuests,
-        price: totalPrice,
-        ...(type === "place"
-          ? { checkIn, checkOut }
-          : { date: selectedDate }),
-      };
-
-      const response = await axios.post("/bookings", bookingData);
-      const booking = response.data;
-
-      navigate("/payment", {
-  state: {
-    amount: totalPrice,
-    bookingId: booking._id, // optional for receipt
-    userName: user.name,
-    userEmail: user.email,
-  },
-});
-    } catch (error) {
-      console.error("Booking Error:", error);
-      alert("Booking failed. Please try again.");
-    }
+  function handleProceedToPayment() {
+  // Check if user is not signed in
+  if (!user) {
+    alert("Please sign in to continue.");
+    navigate("/login");
+    return;
   }
 
+  if (type === "place" && (!checkIn || !checkOut)) {
+    return alert("Please select check-in and check-out dates.");
+  }
+  if (type !== "place" && !selectedDate) {
+    return alert("Please select a date.");
+  }
+  if (!phone.trim() || !name.trim()) {
+    return alert("Please fill in all details.");
+  }
+
+  const state = {
+    type,
+    itemId: item._id,
+    itemTitle: item.title || item.name,
+    checkIn: checkIn ? checkIn.toISOString() : null,
+    checkOut: checkOut ? checkOut.toISOString() : null,
+    selectedDate: selectedDate ? selectedDate.toISOString() : null,
+    numberOfGuests,
+    name,
+    phone,
+    totalPrice: grandTotal,
+    userName: user?.name || name,
+    userEmail: user?.email || "",
+    paymentMethod: "Test Gateway",
+  };
+
+  navigate("/payment", { state });
+}
+
+
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 max-w-lg mx-auto w-full border border-gray-200">
+    <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 max-w-4xl mx-auto border border-gray-200">
       {/* Price */}
       <div className="text-center mb-6">
         <span className="text-2xl font-semibold">₹{item.price}</span>{" "}
@@ -86,34 +97,101 @@ export default function BookingWidget({ item, type }) {
       {/* Date Selection */}
       {type === "place" ? (
         <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          {/* Check-in */}
           <div className="flex-1">
             <label className="block mb-1 font-medium text-sm">Check-in</label>
-            <Input
-              type="date"
-              value={checkIn}
-              onChange={(e) => setCheckIn(e.target.value)}
-              className="w-full"
-            />
+            <Popover
+              open={checkInPopoverOpen}
+              onOpenChange={setCheckInPopoverOpen}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal truncate",
+                    !checkIn && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                  {checkIn ? format(checkIn, "dd/MM/yyyy") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={checkIn}
+                  onSelect={(date) => {
+                    setCheckIn(date);
+                    if (checkOut && date && checkOut <= date) setCheckOut(null);
+                    if (date) setCheckInPopoverOpen(false);
+                  }}
+                  disabled={(date) => date < new Date().setHours(0, 0, 0, 0)}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
+
+          {/* Check-out */}
           <div className="flex-1">
             <label className="block mb-1 font-medium text-sm">Check-out</label>
-            <Input
-              type="date"
-              value={checkOut}
-              onChange={(e) => setCheckOut(e.target.value)}
-              className="w-full"
-            />
+            <Popover
+              open={checkOutPopoverOpen}
+              onOpenChange={setCheckOutPopoverOpen}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal truncate",
+                    !checkOut && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                  {checkOut ? format(checkOut, "dd/MM/yyyy") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={checkOut}
+                  onSelect={(date) => {
+                    setCheckOut(date);
+                    if (date) setCheckOutPopoverOpen(false);
+                  }}
+                  disabled={(date) =>
+                    date < new Date().setHours(0, 0, 0, 0) ||
+                    (checkIn && date <= checkIn)
+                  }
+                />
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       ) : (
         <div className="mb-4">
           <label className="block mb-1 font-medium text-sm">Date</label>
-          <Input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-full"
-          />
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  "w-full justify-start text-left font-normal truncate",
+                  !selectedDate && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                {selectedDate ? format(selectedDate, "dd/MM/yyyy") : "Pick a date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+                disabled={(date) => date < new Date().setHours(0, 0, 0, 0)}
+              />
+            </PopoverContent>
+          </Popover>
         </div>
       )}
 
@@ -124,8 +202,7 @@ export default function BookingWidget({ item, type }) {
           type="number"
           min={1}
           value={numberOfGuests}
-          onChange={(e) => setNumberOfGuests(e.target.value)}
-          className="w-full"
+          onChange={(e) => setNumberOfGuests(Number(e.target.value))}
         />
       </div>
 
@@ -133,34 +210,25 @@ export default function BookingWidget({ item, type }) {
       <div className="mb-4 space-y-3">
         <div>
           <label className="block mb-1 font-medium text-sm">Full Name</label>
-          <Input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full"
-            placeholder="John Doe"
-          />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" />
         </div>
         <div>
           <label className="block mb-1 font-medium text-sm">Phone</label>
-          <Input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="w-full"
-            placeholder="+91 98765 43210"
-          />
+          <Input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" />
         </div>
       </div>
 
-      {/* Book Button */}
+      {/* Proceed Button */}
       <Button
-        onClick={handleBooking}
-        className="w-full bg-rose-500 hover:bg-rose-600 text-white font-semibold py-3 rounded-xl flex justify-center items-center gap-2"
+        onClick={handleProceedToPayment}
+        className="w-full bg-rose-500 hover:bg-rose-600 text-white"
+        disabled={loading}
       >
-        Book
-        {totalPrice > 0 && <span className="font-bold">₹{totalPrice}</span>}
+        {loading ? "Processing..." : "Proceed to Pay"}{" "}
+        {grandTotal > 0 && <span className="font-bold">₹{grandTotal}</span>}
       </Button>
+
+      {message && <p className="text-center mt-4 text-sm text-gray-600">{message}</p>}
     </div>
   );
 }

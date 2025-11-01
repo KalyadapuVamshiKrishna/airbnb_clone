@@ -12,6 +12,7 @@
   "license": "ISC",
   "description": "Backend for Airbnb clone with Cloudinary, MongoDB, and Express",
   "dependencies": {
+    "@faker-js/faker": "^10.0.0",
     "@headlessui/react": "^2.2.7",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.7.0",
@@ -26,7 +27,9 @@
     "mime-types": "^2.1.35",
     "mongoose": "^8.18.0",
     "multer": "^2.0.2",
-    "razorpay": "^2.9.6"
+    "nodemailer": "^7.0.6",
+    "razorpay": "^2.9.6",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

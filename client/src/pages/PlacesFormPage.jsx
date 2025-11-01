@@ -1,18 +1,39 @@
-import PhotosUploader from "../components/Places/PhotosUploader.jsx";
-import Perks from "../components/Places/Perks.jsx";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
-import AccountNav from "../components/Account/AccountNav.jsx";
 import { Navigate, useParams } from "react-router-dom";
+import { Trash2 } from "lucide-react";
+
+import PlaceFormSection from "../components/forms/PlaceFormSection";
+import Perks from "../components/Perks";
+import LocationSection from "../components/forms/LocationSection";
+import DateTimePriceSection from "../components/forms/DateTimePriceSection";
+import DeleteConfirmationModal from "../components/forms/DeleteConfirmationModal";
+import PhotosUploader from "../components/PhotoUploader";
+
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+import L from "leaflet";
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+});
+
 export default function PlacesFormPage() {
   const { id } = useParams();
+
+  // ✅ Core state
   const [title, setTitle] = useState("");
   const [address, setAddress] = useState("");
+  const [coordinates, setCoordinates] = useState({ lat: 28.6139, lng: 77.209 });
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [country, setCountry] = useState("");
+
   const [addedPhotos, setAddedPhotos] = useState([]);
   const [description, setDescription] = useState("");
   const [perks, setPerks] = useState([]);
@@ -20,176 +41,254 @@ export default function PlacesFormPage() {
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [maxGuests, setMaxGuests] = useState(1);
-  const [price, setPrice] = useState(100);
+  const [price, setPrice] = useState(1000);
   const [redirect, setRedirect] = useState(false);
+  const [confirmModal, setConfirmModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [errors, setErrors] = useState({});
 
-  // ✅ Fetch existing place if editing
+  // ✅ Reverse Geocode (server-based fallback)
+  const reverseGeocode = useCallback(async (lat, lng) => {
+    try {
+      const { data } = await axios.get(`/reverse-geocode?lat=${lat}&lon=${lng}`);
+      if (data) {
+        setAddress(data.display_name || "Unknown location");
+        setCity(data.city || data.town || data.village || "");
+        setState(data.state || "");
+        setCountry(data.country || "");
+      }
+    } catch (error) {
+      console.error("Reverse geocoding error:", error.response?.data || error.message);
+      setAddress("Could not fetch address");
+    }
+  }, []);
+
+  // ✅ Load data if editing
   useEffect(() => {
-    if (!id) return;
-    axios.get(`/places/${id}`, { withCredentials: true }).then((response) => {
-      const { data } = response;
-      setTitle(data.title);
-      setAddress(data.address);
-      setAddedPhotos(data.photos);
-      setDescription(data.description);
-      setPerks(data.perks);
-      setExtraInfo(data.extraInfo);
-      setCheckIn(data.checkIn);
-      setCheckOut(data.checkOut);
-      setMaxGuests(data.maxGuests);
-      setPrice(data.price);
-    });
-  }, [id]);
+    if (id) {
+      axios.get(`/places/${id}`, { withCredentials: true }).then((response) => {
+        const { data } = response;
+        setTitle(data.title);
+        setAddress(data.address);
+        setAddedPhotos(data.photos || []);
+        setDescription(data.description || "");
+        setPerks(data.perks || []);
+        setExtraInfo(data.extraInfo || "");
+        setCheckIn(data.checkIn || "");
+        setCheckOut(data.checkOut || "");
+        setMaxGuests(data.maxGuests || 1);
+        setPrice(data.price || 1000);
+        setCity(data.city || "");
+        setState(data.state || "");
+        setCountry(data.country || "");
 
-  function inputHeader(text) {
-    return <h2 className="text-2xl font-semibold mt-6">{text}</h2>;
-  }
+        if (data.coordinates?.lat && data.coordinates?.lng) {
+          setCoordinates(data.coordinates);
+        }
+      });
+    } else {
+      reverseGeocode(coordinates.lat, coordinates.lng);
+    }
+  }, [id, reverseGeocode]);
 
-  function inputDescription(text) {
-    return <p className="text-gray-500 text-sm mb-2">{text}</p>;
-  }
-
-  function preInput(header, description) {
-    return (
-      <>
-        {inputHeader(header)}
-        {inputDescription(description)}
-      </>
-    );
-  }
-
-  // ✅ Save or update place
+  // ✅ Save place (POST/PUT)
   async function savePlace(ev) {
     ev.preventDefault();
+    setErrors({});
+
     const placeData = {
       title,
       address,
-      photos: addedPhotos, // ✅ Match backend field
+      coordinates,
+      photos: addedPhotos,
       description,
       perks,
       extraInfo,
       checkIn,
       checkOut,
-      maxGuests,
-      price,
+      maxGuests: Number(maxGuests),
+      price: Number(price),
+      city,
+      state,
+      country,
     };
 
     try {
       if (id) {
-        // ✅ Update existing place
         await axios.put(`/places/${id}`, placeData, { withCredentials: true });
       } else {
-        // ✅ Create new place
         await axios.post("/places", placeData, { withCredentials: true });
       }
       setRedirect(true);
     } catch (e) {
       console.error("Save place error:", e.response?.data || e.message);
-      alert("Failed to save. Please try again.");
+      if (e.response?.data?.details) {
+        setErrors(e.response.data.details);
+      } else {
+        alert(e.response?.data?.error || "Failed to save. Please try again.");
+      }
     }
   }
 
-  if (redirect) return <Navigate to={"/account/places"} />;
+  // ✅ Delete place
+  async function deletePlace() {
+    if (!id) return;
+    try {
+      setIsDeleting(true);
+      await axios.delete(`/places/${id}`, { withCredentials: true });
+      setRedirect(true);
+    } catch (error) {
+      console.error("Error deleting place:", error);
+      alert("Failed to delete. Please try again.");
+    } finally {
+      setIsDeleting(false);
+      setConfirmModal(false);
+    }
+  }
+
+  if (redirect) return <Navigate to="/account/places" />;
 
   return (
-    <div className="px-4">
-      <AccountNav />
+    <div className="px-4 py-16 sm:px-6 lg:px-8">
       <form
-        className="max-w-4xl mx-auto bg-white p-6 rounded-2xl shadow-md mt-6"
+        className="max-w-4xl mx-auto bg-white p-6 sm:p-8 rounded-2xl shadow-md mt-6 space-y-8"
         onSubmit={savePlace}
       >
-        {preInput("Title", "Short and catchy title for your place")}
-        <Input
-          type="text"
-          value={title}
-          onChange={(ev) => setTitle(ev.target.value)}
-          placeholder="My lovely apartment"
-          required
-        />
+        {/* Title Section */}
+        <PlaceFormSection title="Title" subtitle="(Short and catchy)" error={errors.title}>
+          <Input
+            type="text"
+            value={title}
+            onChange={(ev) => setTitle(ev.target.value)}
+            placeholder="My lovely apartment"
+            required
+          />
+        </PlaceFormSection>
 
-        {preInput("Address", "Address of this place")}
-        <Input
-          type="text"
-          value={address}
-          onChange={(ev) => setAddress(ev.target.value)}
-          placeholder="123 Main St, City"
-          required
-        />
+        {/* Location Section */}
+        <PlaceFormSection
+          title="Location"
+          subtitle="(Search and pin your exact location)"
+          error={errors.address}
+        >
+          <LocationSection
+            address={address}
+            setAddress={setAddress}
+            coordinates={coordinates}
+            setCoordinates={setCoordinates}
+            city={city}
+            setCity={setCity}
+            state={state}
+            setState={setState}
+            country={country}
+            setCountry={setCountry}
+            reverseGeocode={reverseGeocode}
+          />
+        </PlaceFormSection>
 
-        {preInput("Photos", "Add more photos for better visibility")}
-        <PhotosUploader addedPhotos={addedPhotos} onChange={setAddedPhotos} />
+        {/* Photos */}
+        <PlaceFormSection
+          title="Photos"
+          subtitle="Add more photos for better visibility"
+          error={errors.photos}
+        >
+          <PhotosUploader addedPhotos={addedPhotos} onChange={setAddedPhotos} />
+        </PlaceFormSection>
 
-        {preInput("Description", "Describe your place in detail")}
-        <Textarea
-          value={description}
-          onChange={(ev) => setDescription(ev.target.value)}
-          placeholder="Describe your place..."
-          required
-        />
+        {/* Description */}
+        <PlaceFormSection title="Description" error={errors.description}>
+          <Textarea
+            value={description}
+            onChange={(ev) => setDescription(ev.target.value)}
+            placeholder="Describe your place..."
+            rows={5}
+            required
+          />
+        </PlaceFormSection>
 
-        {preInput("Perks", "Select all perks available at your place")}
-        <div className="grid gap-2 grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mt-2">
-          <Perks selected={perks} onChange={setPerks} />
+        {/* Perks */}
+        <PlaceFormSection
+          title="Perks"
+          subtitle="Select all perks available at your place"
+          error={errors.perks}
+        >
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 mt-2">
+            <Perks selected={perks} onChange={setPerks} />
+          </div>
+        </PlaceFormSection>
+
+        {/* Extra Info */}
+        <PlaceFormSection
+          title="Extra info"
+          subtitle="House rules, additional info, etc."
+          error={errors.extraInfo}
+        >
+          <Textarea
+            value={extraInfo}
+            onChange={(ev) => setExtraInfo(ev.target.value)}
+            placeholder="Any extra info..."
+            rows={4}
+          />
+        </PlaceFormSection>
+
+        {/* Check-in/out and Price */}
+        <PlaceFormSection
+          title="Check-in & out times & Price"
+          subtitle="Set check-in/out times, max guests, and price per night"
+        >
+          <DateTimePriceSection
+            checkIn={checkIn}
+            setCheckIn={setCheckIn}
+            checkOut={checkOut}
+            setCheckOut={setCheckOut}
+            maxGuests={maxGuests}
+            setMaxGuests={setMaxGuests}
+            price={price}
+            setPrice={setPrice}
+            errors={errors}
+          />
+        </PlaceFormSection>
+
+        {/* Save/Delete Buttons */}
+        <div className="flex justify-between items-center pt-4">
+          {id && (
+            <Button
+              variant="destructive"
+              type="button"
+              onClick={() => setConfirmModal(true)}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" /> Delete
+            </Button>
+          )}
+          <Button
+            className="px-6 py-3 text-base font-semibold rounded-lg bg-rose-500 hover:bg-rose-600 text-white ml-auto"
+            type="submit"
+          >
+            Save Place
+          </Button>
         </div>
 
-        {preInput("Extra info", "House rules, additional info, etc")}
-        <Textarea
-          value={extraInfo}
-          onChange={(ev) => setExtraInfo(ev.target.value)}
-          placeholder="Any extra info..."
-        />
-
-        {preInput(
-          "Check in & out times",
-          "Set check in/out times and allow cleaning buffer"
+        {/* Validation Errors */}
+        {Object.keys(errors).length > 0 && (
+          <div className="bg-red-50 border border-red-300 text-red-700 p-3 rounded-lg mt-4">
+            <p className="font-semibold mb-1">Please fix the following errors:</p>
+            <ul className="list-disc list-inside text-sm">
+              {Object.entries(errors).map(([field, messages]) => (
+                <li key={field}>{messages[0]}</li>
+              ))}
+            </ul>
+          </div>
         )}
-        <div className="grid gap-4 grid-cols-2 md:grid-cols-4 mt-2">
-          <div>
-            <Label>Check in</Label>
-            <Input
-              type="text"
-              value={checkIn}
-              onChange={(ev) => setCheckIn(ev.target.value)}
-              placeholder="14"
-              required
-            />
-          </div>
-          <div>
-            <Label>Check out</Label>
-            <Input
-              type="text"
-              value={checkOut}
-              onChange={(ev) => setCheckOut(ev.target.value)}
-              placeholder="11"
-              required
-            />
-          </div>
-          <div>
-            <Label>Max guests</Label>
-            <Input
-              type="number"
-              value={maxGuests}
-              onChange={(ev) => setMaxGuests(ev.target.value)}
-              min={1}
-              required
-            />
-          </div>
-          <div>
-            <Label>Price per night</Label>
-            <Input
-              type="number"
-              value={price}
-              onChange={(ev) => setPrice(ev.target.value)}
-              min={1}
-              required
-            />
-          </div>
-        </div>
-
-        <Button className="w-full mt-6" type="submit">
-          Save Place
-        </Button>
       </form>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={confirmModal}
+        onClose={() => setConfirmModal(false)}
+        onConfirm={deletePlace}
+        isDeleting={isDeleting}
+      />
     </div>
   );
 }
