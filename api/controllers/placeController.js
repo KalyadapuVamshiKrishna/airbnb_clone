@@ -151,6 +151,8 @@ export const getAllPlaces = async (req, res) => {
       ];
     }
 
+
+
     // --- Price filter ---
     if (priceMin || priceMax) {
       query.price = {};
@@ -169,19 +171,26 @@ export const getAllPlaces = async (req, res) => {
     }
 
     // --- Sorting ---
-    let sortOption = {};
-    switch (sortBy) {
-      case "priceAsc":
-        sortOption = { price: 1 };
-        break;
-      case "priceDesc":
-        sortOption = { price: -1 };
-        break;
-      case "newest":
-      default:
-        sortOption = { createdAt: -1 };
-        break;
-    }
+   let sortOption = {};
+switch (sortBy) {
+  case "priceAsc":
+    sortOption = { price: 1 };
+    break;
+
+  case "priceDesc":
+    sortOption = { price: -1 };
+    break;
+
+  case "topRated":
+    sortOption = { averageRating: -1 }; // ⭐ NEW
+    break;
+
+  case "newest":
+  default:
+    sortOption = { createdAt: -1 };
+    break;
+}
+
 
     // --- Pagination ---
     const pageNum = parseInt(page, 10);
@@ -205,10 +214,12 @@ export const getAllPlaces = async (req, res) => {
       }
     }
 
-    const enrichedPlaces = places.map((p) => ({
-      ...p.toObject(),
-      isFavorite: wishlistSet.has(p._id.toString()),
-    }));
+   const enrichedPlaces = places.map((p) => ({
+  ...p.toObject(),
+  isFavorite: wishlistSet.has(p._id.toString()),
+  reviewCount: p.reviews?.length || 0, // ⭐ NEW
+}));
+
 
     res.json({
       places: enrichedPlaces,
@@ -229,7 +240,9 @@ export const getAllPlaces = async (req, res) => {
  */
 export const getPlaceById = async (req, res) => {
   try {
-    const place = await Place.findById(req.params.id);
+   const place = await Place.findById(req.params.id)
+  .populate("reviews.user", "name");   // ⭐ NEW
+
     if (!place) return res.status(404).json({ error: "Place not found" });
 
     let isFavorite = false;
@@ -240,7 +253,12 @@ export const getPlaceById = async (req, res) => {
         .includes(place._id.toString());
     }
 
-    res.json({ ...place.toObject(), isFavorite });
+    res.json({
+  ...place.toObject(),
+  isFavorite,
+  reviewCount: place.reviews.length,
+});
+
   } catch (err) {
     console.error("Error fetching place:", err);
     res.status(500).json({ error: "Failed to fetch place" });
